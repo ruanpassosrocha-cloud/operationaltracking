@@ -1147,6 +1147,7 @@ select:focus{outline:none;border-color:#3a7fd4;}
     if (pronto) {
       pvrCarregarDaNuvem();
       expCarregarDaNuvem();
+      if (typeof window.biCarregarDaNuvem === 'function') window.biCarregarDaNuvem();
     } else if (document.readyState !== 'complete') {
       // essa checagem de sessão pode disparar antes do resto do sistema
       // (mais abaixo no documento) terminar de carregar — espera a página
@@ -2320,6 +2321,31 @@ function loadData(){
 }
 function saveData(){ if(IS_STANDALONE) return; try{localStorage.setItem(LS_KEY, JSON.stringify(biState.data));}catch(e){} }
 
+// ── NUVEM: o Dashboard de Estoque, até aqui, só ficava salvo no navegador
+// (localStorage) — por isso sumia/pedia reimportação sempre que a página
+// era aberta num navegador diferente ou com o cache limpo. Agora ele
+// também é espelhado na tabela genérica mta_estado (chave 'bi_estoque'),
+// igual ao Recebimento e à Expedição já fazem na tabela series_itens.
+function biSincronizarNuvem(){
+  if (IS_STANDALONE || typeof window.mtaSupabase === 'undefined') return;
+  window.mtaSupabase.from('mta_estado').upsert({ chave:'bi_estoque', dados:biState.data, atualizado_em:new Date().toISOString() }, {onConflict:'chave'}).then(function(res){
+    if (res.error) console.error('Erro ao sincronizar Dashboard de Estoque com a nuvem:', res.error);
+  });
+}
+function biCarregarDaNuvem(){
+  if (IS_STANDALONE || typeof window.mtaSupabase === 'undefined') return;
+  window.mtaSupabase.from('mta_estado').select('dados').eq('chave','bi_estoque').maybeSingle().then(function(res){
+    if (res.error){ console.error('Erro ao carregar Dashboard de Estoque da nuvem:', res.error); return; }
+    var d = res.data && res.data.dados;
+    if (d && d.AC01 && d.AC02){
+      biState.data = d;
+      saveData();
+      render();
+    }
+  });
+}
+window.biCarregarDaNuvem = biCarregarDaNuvem;
+
 /* ---------- formatação ---------- */
 function fmtInt(n){ return (n||0).toLocaleString('pt-BR'); }
 function fmtMoney(n){ return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -2892,6 +2918,7 @@ function atualizarComDadosAoVivo(){
   biState.data.AC02 = novo.AC02;
   biState.data.updatedAt = 'Atualizado automaticamente a partir do Recebimento/Expedição em ' + new Date().toLocaleString('pt-BR');
   saveData();
+  biSincronizarNuvem();
   biState.modelo=null; biState.mes=null; biState.aging=null;
   render();
   setStatus('✔ Atualizado! ' + totalEncontrado + ' série(s) em estoque (AC-01: '+novo.AC01.estoque.length+', AC-02: '+novo.AC02.estoque.length+'). Valor e Séries sem NF continuam vindo da última planilha importada, pois o Recebimento não registra essas informações.', true);
@@ -2915,6 +2942,7 @@ function importExcel(file){
         var now=new Date();
         biState.data.updatedAt='Atualizado em '+now.toLocaleDateString('pt-BR')+' '+now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' ('+(target==='AC01'?'AC-01':'AC-02')+': '+file.name+')';
         saveData();
+        biSincronizarNuvem();
         biState.arm=target; biState.modelo=null; biState.mes=null; biState.aging=null;
         render();
         setStatus('✔ Importado com sucesso para '+(target==='AC01'?'AC-01':'AC-02')+': '+parsed.estoque.length+' séries em estoque, '+parsed._recebTotal+' recebimentos e '+parsed._expedTotal+' expedições em 2026.',true);
@@ -3209,6 +3237,7 @@ window.biAutoRefreshSilencioso = function(){
     biState.data.AC02 = novo.AC02;
     biState.data.updatedAt = 'Atualizado automaticamente a partir do Recebimento/Expedição em ' + new Date().toLocaleString('pt-BR');
     saveData();
+    biSincronizarNuvem();
     render();
   }catch(e){ /* falha silenciosa — nunca deve travar a navegação */ }
 };
@@ -5700,6 +5729,39 @@ function pvrSalvarHistoricoStorage() {
     showToast('⚠️ Histórico local grande demais para salvar neste navegador — os dados já foram enviados pra nuvem, mas clique em "⬇️ Carregar da nuvem" se a tela não atualizar sozinha.', 9000);
   }
 }
+// ── NAVIOS: o nome do navio (marcado em "Importar ZIP(s) por Navio") é uma
+// informação por arquivo (pl_file), não por item, e a tabela series_itens só
+// guarda dados por item — por isso ela fica de fora da reconstrução de
+// pvrHistorico feita em pvrCarregarDaNuvem, que lê só o que está nessa
+// tabela. Guardamos o mapa {fileName: navio} à parte, na tabela genérica
+// mta_estado (chave 'pvr_navios'), pra sobreviver a um F5 ou troca de
+// computador igual ao resto dos dados.
+function pvrMapaNavios(){
+  var m = {};
+  pvrHistorico.forEach(function(h){ if (h.navio) m[h.fileName] = h.navio; });
+  return m;
+}
+function pvrSincronizarNaviosNuvem(){
+  if (typeof window.mtaSupabase === 'undefined') return;
+  var mapa = pvrMapaNavios();
+  if (!Object.keys(mapa).length) return;
+  window.mtaSupabase.from('mta_estado').upsert({ chave:'pvr_navios', dados:mapa, atualizado_em:new Date().toISOString() }, {onConflict:'chave'}).then(function(res){
+    if (res.error) console.error('Erro ao sincronizar navios com a nuvem:', res.error);
+  });
+}
+async function pvrCarregarNaviosDaNuvem(){
+  if (typeof window.mtaSupabase === 'undefined') return null;
+  try{
+    var res = await window.mtaSupabase.from('mta_estado').select('dados').eq('chave','pvr_navios').maybeSingle();
+    if (res.error){ console.error('Erro ao carregar navios da nuvem:', res.error); return null; }
+    return (res.data && res.data.dados) || null;
+  }catch(e){ console.error(e); return null; }
+}
+function pvrAplicarMapaNavios(mapa){
+  if (!mapa) return;
+  pvrHistorico.forEach(function(h){ if (!h.navio && mapa[h.fileName]) h.navio = mapa[h.fileName]; });
+}
+
 /* ── Carrega o Recebimento inteiro da nuvem (usado ao reabrir o sistema) ── */
 async function pvrCarregarDaNuvem(force){
   if (typeof window.mtaSupabase === 'undefined') return;
@@ -5743,6 +5805,11 @@ async function pvrCarregarDaNuvem(force){
       }
     });
 
+    // Guarda o mapa de navios do histórico ATUAL (antes de ser substituído
+    // abaixo) — é o que evita que o nome do navio suma toda vez que a nuvem
+    // é recarregada (ex: ao dar F5 na página).
+    var mapaNavioLocal = pvrMapaNavios();
+
     pvrSeries = novoSeries;
     pvrTodos = novoTodos;
     pvrHistorico = Object.keys(plsInfo).map(function(fname){
@@ -5750,6 +5817,15 @@ async function pvrCarregarDaNuvem(force){
       var numSeries = Object.keys(info.series).length;
       return { fileName:fname, modelo:info.modelo, numSeries:numSeries, volsPerSerie:Math.round(info.itens/Math.max(1,numSeries)), addedAt:'Carregado da nuvem', plItems:[], serials:[], items:[] };
     });
+
+    // Reaplica o nome do navio de cada PL: primeiro o que veio da nuvem
+    // (funciona em qualquer computador, mesmo sem esse histórico local),
+    // depois o mapa local por cima (prevalece se este navegador tiver uma
+    // marcação mais recente que ainda não foi sincronizada).
+    var mapaNavioNuvem = await pvrCarregarNaviosDaNuvem();
+    pvrAplicarMapaNavios(mapaNavioNuvem);
+    pvrAplicarMapaNavios(mapaNavioLocal);
+    pvrSincronizarNaviosNuvem();
 
     // Reaplica exclusões locais (itens apagados manualmente neste navegador) —
     // senão um item apagado "voltaria" toda vez que a nuvem for recarregada,
@@ -5936,7 +6012,7 @@ function pvrImportarZipsNavio(fileList) {
         return m;
       });
       showToast(aplicados.length + ' zip(s) importado(s), ' + totalImportados + ' PL(s) no total — ' + linhas.join(' · '), 10000);
-      if (totalImportados > 0) pvrSincronizarNuvem();
+      if (totalImportados > 0) { pvrSincronizarNuvem(); pvrSincronizarNaviosNuvem(); }
       return;
     }
     var f = files[idx++];
@@ -6071,6 +6147,7 @@ function pvrRenomearNavio(navioAntigo) {
   pvrHistorico.forEach(function(h) { if ((h.navio || '') === navioAntigo) h.navio = novo; });
   if (pvrNaviosColapsados[navioAntigo]) { pvrNaviosColapsados[novo] = true; delete pvrNaviosColapsados[navioAntigo]; }
   pvrSalvarHistoricoStorage();
+  pvrSincronizarNaviosNuvem();
   pvrRenderHistorico();
   showToast('Navio renomeado para "' + novo + '".');
 }
