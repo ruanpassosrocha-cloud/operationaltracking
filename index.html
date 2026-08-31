@@ -2491,7 +2491,9 @@ function formadorSeguro(fn, v){ try{ return fn(v); }catch(e){ return String(v); 
 
 function modelosCount(){
   var m={};
-  armData().estoque.forEach(function(r){ m[r[1]]=(m[r[1]]||0)+1; });
+  var rows=armData().estoque;
+  if(biState.aging!=null) rows=rows.filter(function(r){return agingBucketOf(diasLive(r))===biState.aging;});
+  rows.forEach(function(r){ m[r[1]]=(m[r[1]]||0)+1; });
   var arr=Object.keys(m).map(function(k){return [k,m[k]];});
   arr.sort(function(a,b){return b[1]-a[1];});
   return arr;
@@ -2621,7 +2623,9 @@ function render(){
   var totEstoque=rows.length;
   var totValor=0, totPartes=0;
   rows.forEach(function(r){ totValor+=r[4]; totPartes+=r[3]; });
-  var aging=agingBuckets(rows);
+  var rowsParaAging=armData().estoque;
+  if(biState.modelo) rowsParaAging=rowsParaAging.filter(function(r){return r[1]===biState.modelo;});
+  var aging=agingBuckets(rowsParaAging);
   var receb=movCount('receb'), exped=movCount('exped');
   var filtros=[];
   if(biState.modelo) filtros.push({k:'modelo',label:'Modelo: '+biState.modelo});
