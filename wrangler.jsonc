@@ -1,0 +1,16 @@
+{
+	// Nome do projeto — precisa ser IGUAL ao nome do Worker que você criar
+	// no painel do Cloudflare (Workers & Pages). Se você usar outro nome
+	// lá, troque aqui também.
+	"name": "operational-tracking",
+	"compatibility_date": "2026-09-01",
+
+	// worker.js cuida das 3 rotas de API (assistente com IA e integração
+	// com o Checklist Fácil); tudo o que não for essas rotas é servido
+	// como arquivo estático (o index.html) pelo binding "ASSETS" abaixo.
+	"main": "worker.js",
+	"assets": {
+		"directory": "./",
+		"binding": "ASSETS"
+	}
+}
