@@ -1345,10 +1345,17 @@ select:focus{outline:none;border-color:#3a7fd4;}
   </div>
   <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">Programação de Carregamento</div>
   <div style="font-size:12px;color:#8aaad0;margin-bottom:16px">Acompanhamento ao vivo — Grupo MTA</div>
+  <div class="est-arm-toggle" id="cliente-aba-toggle" style="margin-bottom:8px">
+    <button class="est-arm-btn" data-cliente-aba="painel" onclick="clienteSetAba('painel')">📦 Painel (a carregar)</button>
+    <button class="est-arm-btn" data-cliente-aba="expedidos" onclick="clienteSetAba('expedidos')">✅ Expedidos</button>
+  </div>
   <div class="est-arm-toggle" id="cliente-arm-toggle" style="margin-bottom:14px">
     <button class="est-arm-btn" data-cliente-arm="AC-01" onclick="clienteSetArm('AC-01')">AC-01</button>
     <button class="est-arm-btn" data-cliente-arm="AC-02" onclick="clienteSetArm('AC-02')">AC-02</button>
     <button class="est-arm-btn est-arm-geral" data-cliente-arm="GERAL" onclick="clienteSetArm('GERAL')">Geral (AC-01 + AC-02)</button>
+  </div>
+  <div style="margin-bottom:14px">
+    <input type="text" id="cliente-busca-serie" placeholder="🔎 Pesquisar por série..." oninput="clienteFiltrarBusca(this.value)" style="width:100%;max-width:320px;background:rgba(10,20,35,0.5);border:1px solid rgba(58,127,212,0.3);border-radius:8px;color:#c8d8f0;font-size:13px;padding:9px 12px;box-sizing:border-box">
   </div>
   <div id="cliente-tabela-wrap"></div>
 </div>
@@ -2111,6 +2118,7 @@ select:focus{outline:none;border-color:#3a7fd4;}
     <button class="pvr-view-btn active" id="exp-subtab-btn-kanban" onclick="expSetSubTab('kanban',this)">📤 Expedição (Kanban)</button>
     <button class="pvr-view-btn" id="exp-subtab-btn-etapas" onclick="expSetSubTab('etapas',this)">📋 Etapas de Processo</button>
     <button class="pvr-view-btn" id="exp-subtab-btn-prog" onclick="expSetSubTab('prog',this)">🚚 Programação de Carregamento</button>
+    <button class="pvr-view-btn" id="exp-subtab-btn-catexp" onclick="expSetSubTab('catexp',this)">📇 Catálogo para Expedição</button>
   </div>
 
   <div id="exp-subview-kanban" class="exp-subview">
@@ -2394,6 +2402,23 @@ select:focus{outline:none;border-color:#3a7fd4;}
     <div id="prog-cliente-status" style="font-size:11.5px;color:#8aaad0;margin-top:10px">Verificando…</div>
   </div>
 
+  </div>
+
+  <div id="exp-subview-catexp" class="exp-subview" style="display:none">
+  <div class="card">
+    <div class="card-title" style="gap:9px"><span class="dot"></span>📇 Catálogo para Expedição</div>
+    <p style="font-size:11px;color:#3a5a7a;margin-bottom:10px">Escolha uma ou mais <strong style="color:#5addf4">Séries</strong> já cadastradas no Recebimento e gere um Excel no mesmo padrão da planilha "Registro" — uma linha por item (corpo da máquina + acessórios) de cada série escolhida, com Processo Timbro/Ref. Sany, Nota Fiscal, Valor e Pátio já cruzados do que foi importado no Catálogo do Recebimento. <strong style="color:#f5b942">Campos que nenhum arquivo importado trouxe pra aquele Código ficam em branco — nunca inventados.</strong> Se algum dado estiver faltando pra muitas séries, importe aqui também as planilhas de "Registro" antigas (as mesmas que você já sobe pro Recebimento) — cada importação enriquece esse histórico.</p>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <input type="text" id="catexp-busca" placeholder="🔎 Pesquisar série..." oninput="catExpRenderLista()" style="flex:1;min-width:200px;background:rgba(10,20,35,0.4);border:1px solid rgba(58,127,212,0.25);border-radius:8px;color:#c8d8f0;font-size:12.5px;padding:8px 12px">
+      <button class="btn btn-primary" style="padding:7px 14px;font-size:12px" onclick="catExpSelecionarTodosVisiveis()">☑️ Marcar todas (filtradas)</button>
+      <button class="btn btn-danger" style="padding:7px 14px;font-size:12px" onclick="catExpLimparSelecao()">Limpar seleção</button>
+      <span id="catexp-contador" style="font-size:11.5px;color:#8aaad0">0 série(s) selecionada(s)</span>
+    </div>
+    <div id="catexp-lista-wrap" style="max-height:360px;overflow-y:auto;border:1px solid rgba(58,127,212,0.15);border-radius:8px;padding:6px"></div>
+    <div style="margin-top:12px">
+      <button class="btn btn-excel" onclick="catExpExportar()">📊 Exportar Catálogo para Expedição (.xlsx)</button>
+    </div>
+  </div>
   </div>
 
 </div>
@@ -3463,9 +3488,13 @@ function setStatus(msg,ok){
 }
 /* ---------- Atualização automática a partir do Recebimento/Expedição ao vivo ---------- */
 function biNormalizarPatio(p){
+  // Aceita qualquer jeito que o Pátio apareça na planilha/base ("AC1", "AC01",
+  // "AC-01", "AC 01", "ac01"...) — inclusive SEM o zero à esquerda, que é
+  // como o dado real do Ruan às vezes vem (bug relatado: filtro "AC1" não
+  // achava nada porque só reconhecia "AC01").
   var s = String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  if (s.indexOf('AC01')>=0) return 'AC01';
-  if (s.indexOf('AC02')>=0) return 'AC02';
+  if (/AC0?1(?!\d)/.test(s)) return 'AC01';
+  if (/AC0?2(?!\d)/.test(s)) return 'AC02';
   return null;
 }
 function biIsoDeDataBR(dataBR){
@@ -4067,6 +4096,7 @@ window.biCalcularLedgerAoVivo = biCalcularLedgerAoVivo;
 window.biCalcularDadosAoVivo = biCalcularDadosAoVivo;
 window.biFmtMoney = fmtMoney;
 window.biEsc = esc;
+window.biNormalizarPatio = biNormalizarPatio;
 })();
 
 </script>
@@ -5104,26 +5134,54 @@ function progLimparColado(){
    mesma que sobe pro Checklist Fácil / Import de Catálogos do Recebimento)
    — monta um rascunho de Programação de Carregamento direto da planilha,
    sem precisar colar e-mail.
-   Puxa só o que é SEGURO puxar dessa planilha, juntando as várias linhas de
-   cada série (corpo + acessórios): Modelo, Nota de Entrada (Nro Nota
-   Fiscal), Pátio e Total (Qtde Vol Total da NF, ou a contagem de linhas se
-   essa coluna não vier). A Etapa Processo continua vindo do jeito que já é
-   hoje — cruzada pelo Checklist Fácil "Movimentação de Serial" importado
-   ao lado (progEtapaDaSerie), não desta planilha.
-   Data, Horário, Transportadora (do caminhão), Motorista/Identificação,
-   Nota de Saída e a categoria "Máquina" (Guindaste/Rolo/Carregadeira etc.)
-   NÃO existem nessa planilha — são dados de quando a carga é AGENDADA, não
-   de quando é registrada no armazém — então ficam em branco, marcados em
-   amarelo no rascunho (mesmo padrão já usado quando algo não bate ao colar
-   o e-mail), pro Ruan preencher à mão antes de confirmar. Nunca inventa. */
+   Puxa da planilha, juntando as várias linhas de cada série (corpo +
+   acessórios): Modelo, Nota de Entrada (Nro Nota Fiscal), Pátio e Total
+   (Qtde Vol Total da NF, ou a contagem de linhas se essa coluna não vier).
+   A Etapa Processo continua vindo do jeito que já é hoje — cruzada pelo
+   Checklist Fácil "Movimentação de Serial" importado ao lado
+   (progEtapaDaSerie), não desta planilha.
+   Data, Horário, Transportadora e Identificação (motorista) são OPCIONAIS
+   nessa planilha — o Ruan pode passar a incluir essas colunas quando já
+   souber a coleta/carregamento no momento de montar o catálogo. Se a
+   coluna existir e tiver valor, usa; se não existir (ou vier vazia pra
+   aquela série), fica em branco — nunca inventa. Nota de Saída e a
+   categoria "Máquina" continuam sem equivalente nessa planilha, então
+   ficam sempre em branco aqui também. Tudo que fica em branco aparece
+   destacado em amarelo no rascunho (mesmo padrão já usado quando algo não
+   bate ao colar o e-mail), pro Ruan preencher à mão antes de confirmar. */
 var PROG_CAT_EXP_CAMPOS_CABECALHO = {
   serie: ['serie'],
   modelo: ['modelo'],
   notaFiscal: ['nro nota fiscal', 'numero nota fiscal', 'nota fiscal'],
   patio: ['patio'],
   qtdeVolTotal: ['qtde vol total da nf', 'qtde vol total'],
-  nomeEquipamento: ['nome do equipamento']
+  nomeEquipamento: ['nome do equipamento'],
+  data: ['data'],
+  horario: ['horario', 'hora'],
+  transportadora: ['transportadora'],
+  identificacao: ['identificacao', 'motorista']
 };
+// Converte um valor de célula de Data pra "DD/MM/AAAA" — aceita já vir como
+// texto nesse formato, ou como data/serial do Excel (quando a coluna tem
+// formatação de data de verdade). Nunca inventa: sem valor, retorna ''.
+function progDataCatalogo(v){
+  if (v === '' || v == null) return '';
+  if (typeof v === 'string') { var s = v.trim(); return s; }
+  if (typeof toDate === 'function') { var d = toDate(v); if (d) return fmtD(d); }
+  return String(v).trim();
+}
+// Converte um valor de célula de Horário pra "HH:MM" — aceita texto já
+// pronto, ou uma fração de dia do Excel (célula formatada como hora, ex:
+// 0.375 = 09:00). Nunca inventa: sem valor, retorna ''.
+function progHorarioCatalogo(v){
+  if (v === '' || v == null) return '';
+  if (typeof v === 'number' && v >= 0 && v < 1) {
+    var totalMin = Math.round(v * 24 * 60);
+    var hh = Math.floor(totalMin / 60), mm = totalMin % 60;
+    return ('0' + hh).slice(-2) + ':' + ('0' + mm).slice(-2);
+  }
+  return String(v).trim();
+}
 function progImportarCatalogoExpedicao(files){
   if (!files || !files.length) return;
   if (typeof XLSX === 'undefined') { showToast('⚠️ Biblioteca de Excel indisponível (verifique a conexão com a internet).', 6000); return; }
@@ -5167,7 +5225,11 @@ function progImportarCatalogoExpedicao(files){
             modelo: colMap.modelo !== undefined ? String(r[colMap.modelo] || '').trim() : '',
             notaFiscal: colMap.notaFiscal !== undefined ? String(r[colMap.notaFiscal] || '').trim() : '',
             patio: colMap.patio !== undefined ? String(r[colMap.patio] || '').trim() : '',
-            qtdeVolTotal: colMap.qtdeVolTotal !== undefined ? String(r[colMap.qtdeVolTotal] || '').trim() : ''
+            qtdeVolTotal: colMap.qtdeVolTotal !== undefined ? String(r[colMap.qtdeVolTotal] || '').trim() : '',
+            data: colMap.data !== undefined ? progDataCatalogo(r[colMap.data]) : '',
+            horario: colMap.horario !== undefined ? progHorarioCatalogo(r[colMap.horario]) : '',
+            transportadora: colMap.transportadora !== undefined ? String(r[colMap.transportadora] || '').trim() : '',
+            identificacao: colMap.identificacao !== undefined ? String(r[colMap.identificacao] || '').trim() : ''
           };
         }
       }
@@ -5178,10 +5240,10 @@ function progImportarCatalogoExpedicao(files){
         var corpo = info.corpo || {};
         var volumesQtde = corpo.qtdeVolTotal !== '' && !isNaN(parseFloat(corpo.qtdeVolTotal)) ? parseFloat(corpo.qtdeVolTotal) : null;
         return {
-          ag: '', data: '', horario: '',
-          transportadora: '', veiculo: '',
+          ag: '', data: corpo.data || '', horario: corpo.horario || '',
+          transportadora: corpo.transportadora || '', veiculo: '',
           cliente: '', motorista: '',
-          identificacao: '',
+          identificacao: corpo.identificacao || '',
           serie: serie,
           maquina: '',
           modelo: corpo.modelo || progModeloDaSerie(serie) || '',
@@ -5195,7 +5257,7 @@ function progImportarCatalogoExpedicao(files){
       });
       progOrigemAtual = 'catalogo_expedicao';
       progRenderPreview();
-      showToast('✅ ' + progPreview.length + ' série(s) encontradas em "' + file.name + '" — confira e preencha Data/Horário/Transportadora/Motorista/Nota de Saída/Máquina antes de lançar (não vêm dessa planilha).', 8000);
+      showToast('✅ ' + progPreview.length + ' série(s) encontradas em "' + file.name + '" — confira antes de lançar (o que não veio da planilha fica em amarelo pra você preencher).', 8000);
     } catch (err) {
       console.error(err);
       showToast('Erro ao importar "' + file.name + '": ' + err.message, 7000);
@@ -5506,7 +5568,7 @@ function progRenderTabela(){
   toggleAba.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-prog-aba') === progAba); });
 
   var linhas = progLancamentos.slice();
-  if (progArm !== 'GERAL') linhas = linhas.filter(function(l){ return l.patio === progArm; });
+  if (progArm !== 'GERAL') linhas = linhas.filter(function(l){ return window.biNormalizarPatio(l.patio) === window.biNormalizarPatio(progArm); });
   linhas = linhas.filter(function(l){ return progEhExpedido(l.etapaProcesso) === (progAba === 'expedidos'); });
   if (progTabelaState.sortField) progOrdenarLinhas(linhas, progTabelaState.sortField, progTabelaState.sortDir);
   else linhas.sort(function(a, b){ return (progValorOrdenavel(b, 'data') || 0) - (progValorOrdenavel(a, 'data') || 0); });
@@ -5524,7 +5586,7 @@ function progRenderTabela(){
   if (!linhas.length) { wrap.innerHTML = '<div style="color:#7a94b4;font-size:12px;padding:14px 0">Nenhuma programação ' + abaLabel + (progArm !== 'GERAL' ? (' em ' + progArm) : '') + ' ainda.</div>'; return; }
   var h = '<div class="pvr-table-wrap est-table-wrap"><table class="pvr-table" style="font-size:11.5px"><thead><tr>'
     + progTh('data', 'Data') + progTh('horario', 'Horário') + progTh('transportadora', 'Transportadora') + progTh('identificacao', 'Identificação')
-    + progTh('serie', 'Série') + progTh('chassi', 'Chassi') + progTh('modelo', 'Modelo') + progTh('maquina', 'Máquina') + progTh('notaSaida', 'Nota de Saída')
+    + progTh('serie', 'Série') + progTh('modelo', 'Modelo') + progTh('notaSaida', 'Nota de Saída')
     + progTh('notaEntrada', 'Nota de Entrada') + progTh('etapaProcesso', 'Etapa Processo') + progTh('patio', 'Pátio') + progTh('volumes', 'Total')
     + '<th></th>'
     + '</tr></thead><tbody>';
@@ -5538,18 +5600,16 @@ function progRenderTabela(){
       + '<td>' + window.biEsc(l.transportadora || '—') + '</td>'
       + '<td>' + window.biEsc(l.identificacao || '—') + '</td>'
       + '<td style="font-weight:700;color:#5addf4">' + window.biEsc(l.serie) + '</td>'
-      + '<td>' + window.biEsc(l.chassi || '—') + '</td>'
       + '<td>' + window.biEsc(l.modelo || '[confirmar]') + '</td>'
-      + '<td>' + window.biEsc(l.maquina || '—') + '</td>'
-      + '<td>' + window.biEsc(l.notaSaida || '—') + '</td>'
-      + '<td>' + window.biEsc(l.notaEntrada || '[confirmar]') + '</td>'
+      + '<td>' + window.biEsc(l.notaSaida || '') + '</td>'
+      + '<td>' + window.biEsc(l.notaEntrada || '') + '</td>'
       + '<td>' + window.biEsc(l.etapaProcesso || '[confirmar]') + '</td>'
       + '<td>' + window.biEsc(l.patio || '[confirmar]') + '</td>'
       + '<td>' + (vol != null ? vol : '—') + '</td>'
       + '<td><button class="est-area-save" onclick="progRemoverLancamento(\'' + l.id + '\')" title="Remover">🗑️</button></td>'
       + '</tr>';
   });
-  h += '<tr style="background:rgba(58,127,212,0.12);font-weight:700"><td colspan="12" style="text-align:right">Total Geral</td><td>' + totalGeral + '</td><td></td></tr>';
+  h += '<tr style="background:rgba(58,127,212,0.12);font-weight:700"><td colspan="10" style="text-align:right">Total Geral</td><td>' + totalGeral + '</td><td></td></tr>';
   h += '</tbody></table></div><div class="est-scroll-hint">↔ role a tabela pro lado pra ver todas as colunas · clique no título de uma coluna pra ordenar por ela</div>';
   wrap.innerHTML = h;
 }
@@ -10064,7 +10124,7 @@ function expRemoverPL(idx) {
    tudo no mesmo lugar. A lógica interna de cada uma (progAnalisarColado,
    expRenderKanban etc.) não mudou — só o container visual. */
 function expSetSubTab(view, btn) {
-  ['kanban', 'etapas', 'prog'].forEach(function (v) {
+  ['kanban', 'etapas', 'prog', 'catexp'].forEach(function (v) {
     var el = document.getElementById('exp-subview-' + v);
     if (el) el.style.display = (v === view) ? '' : 'none';
   });
@@ -10073,6 +10133,7 @@ function expSetSubTab(view, btn) {
   try { localStorage.setItem('mta_exp_subtab', view); } catch (e) {}
   if (view === 'prog' && typeof window.progRenderTabela === 'function') window.progRenderTabela();
   if (view === 'prog' && typeof window.progAtualizarStatusCliente === 'function') window.progAtualizarStatusCliente();
+  if (view === 'catexp' && typeof window.catExpRenderLista === 'function') window.catExpRenderLista();
 }
 function expAplicarLogos() {
   var m = document.getElementById('exp-logo-mta'), t = document.getElementById('exp-logo-timbro');
@@ -13939,6 +14000,14 @@ function pvrCatalogoSincronizarNuvem(){
   });
 }
 
+// Normaliza texto de cabeçalho de coluna pra comparação tolerante a acento/
+// maiúscula (ex.: "Área Total" e "AREA TOTAL" batem igual) — usado só pra
+// ACHAR a coluna certa; o VALOR da célula nunca passa por essa normalização.
+function catUpperSemAcento(s){
+  return String(s || '').trim().toUpperCase()
+    .replace(/[ÁÀÂÃ]/g,'A').replace(/[ÉÊ]/g,'E').replace(/[ÍÎ]/g,'I')
+    .replace(/[ÓÔÕ]/g,'O').replace(/[ÚÛ]/g,'U').replace(/Ç/g,'C').replace(/²/g,'2');
+}
 function pvrImportarCatalogo(files) {
   if (!files || !files.length) return;
   var file = files[0];
@@ -13976,6 +14045,22 @@ function pvrImportarCatalogo(files) {
         var enderecoKey = keys.find(function(k){ var u=k.trim().toUpperCase().replace(/Ç/g,'C').replace(/Ã/g,'A'); return u==='ENDERECO'||u.indexOf('ENDERECO')>=0; });
         var m2Key       = keys.find(function(k){ var u=k.trim().toUpperCase().replace(/Ç/g,'C').replace(/Ã/g,'A').replace(/²/g,'2'); return u.indexOf('M2 UTILIZADO')>=0||u.indexOf('M² UTILIZADO')>=0||u==='M2'||u==='M²'; });
         var transfKey   = keys.find(function(k){ var u=k.trim().toUpperCase().replace(/Ç/g,'C').replace(/Ã/g,'A').replace(/Ê/g,'E'); return u.indexOf('TRANSFERENCIA INICIAL')>=0||u.indexOf('TRANFERENCIA INICIAL')>=0; });
+        // Colunas que só existem no arquivo "Registro" original (o mesmo que já
+        // é importado aqui pra Processo/Ref/Pátio/NF/Valor) e que, até agora,
+        // eram descartadas — pedido do Ruan pra guardar um histórico completo
+        // e poder gerar depois o "Catálogo para Expedição" sem inventar dado.
+        var registroKey  = keys.find(function(k){ return catUpperSemAcento(k) === 'REGISTRO'; });
+        var ativoKey     = keys.find(function(k){ return catUpperSemAcento(k) === 'ATIVO'; });
+        var transpKey    = keys.find(function(k){ return catUpperSemAcento(k).indexOf('TRANSPORTADORA') >= 0; });
+        var clienteKey   = keys.find(function(k){ return catUpperSemAcento(k) === 'CLIENTE'; });
+        var dimKey       = keys.find(function(k){ return catUpperSemAcento(k).indexOf('DIMENSOES PL') >= 0 || catUpperSemAcento(k).indexOf('DIMENSOES') >= 0; });
+        var areaIndKey   = keys.find(function(k){ return catUpperSemAcento(k).indexOf('AREA INDIVIDUAL') >= 0; });
+        var areaTotKey   = keys.find(function(k){ return catUpperSemAcento(k).indexOf('AREA TOTAL') >= 0; });
+        var pesoKey      = keys.find(function(k){ return catUpperSemAcento(k) === 'PESO'; });
+        var marcaKey     = keys.find(function(k){ return catUpperSemAcento(k) === 'MARCA'; });
+        var cnpjKey      = keys.find(function(k){ return catUpperSemAcento(k).indexOf('CNPJ') >= 0; });
+        var serieNfKey   = keys.find(function(k){ return catUpperSemAcento(k).indexOf('SERIE NF') >= 0; });
+        var nomeEquipKey = keys.find(function(k){ return catUpperSemAcento(k).indexOf('NOME DO EQUIPAMENTO') >= 0; });
         if (!codigoKey) return;
         var codigo = String(row[codigoKey] || '').trim().toUpperCase();
         if (!codigo) return;
@@ -14001,8 +14086,30 @@ function pvrImportarCatalogo(files) {
         if (transferenciaInicial && transferenciaInicial !== 'SIM' && transferenciaInicial !== 'NAO' && transferenciaInicial !== 'NÃO') {
           // valor fora do esperado (ex: "1", "x") — mantém como veio, sem inventar SIM/NAO
         }
-        if (!processoTimbro && !refSany && !patio && !notaFiscal && valor == null && !endereco && m2Utilizado == null && !transferenciaInicial) return;
-        map[codigo] = { processoTimbro: processoTimbro, refSany: refSany, patio: patio, notaFiscal: notaFiscal, valor: valor, endereco: endereco, m2Utilizado: m2Utilizado, transferenciaInicial: transferenciaInicial };
+        // Campos "cadastrais" do Registro original — texto puro, sem
+        // converter/arredondar nada (Peso, Área, Dimensões continuam
+        // exatamente como vieram na planilha, nunca reformatados).
+        var registro    = registroKey  ? String(row[registroKey]  || '').trim() : '';
+        var ativo       = ativoKey     ? String(row[ativoKey]     || '').trim() : '';
+        var transportadora = transpKey ? String(row[transpKey]    || '').trim() : '';
+        var cliente     = clienteKey   ? String(row[clienteKey]   || '').trim() : '';
+        var dimensoesPL = dimKey       ? String(row[dimKey]       || '').trim() : '';
+        var areaIndividual = areaIndKey ? String(row[areaIndKey]  || '').trim() : '';
+        var areaTotal   = areaTotKey   ? String(row[areaTotKey]   || '').trim() : '';
+        var peso        = pesoKey      ? String(row[pesoKey]      || '').trim() : '';
+        var marca       = marcaKey     ? String(row[marcaKey]     || '').trim() : '';
+        var cnpjEmissor = cnpjKey      ? String(row[cnpjKey]      || '').trim() : '';
+        var serieNF     = serieNfKey   ? String(row[serieNfKey]   || '').trim() : '';
+        var nomeEquipamento = nomeEquipKey ? String(row[nomeEquipKey] || '').trim() : '';
+        if (!processoTimbro && !refSany && !patio && !notaFiscal && valor == null && !endereco && m2Utilizado == null && !transferenciaInicial
+            && !registro && !ativo && !transportadora && !cliente && !dimensoesPL && !areaIndividual && !areaTotal && !peso && !marca && !cnpjEmissor && !serieNF && !nomeEquipamento) return;
+        map[codigo] = {
+          processoTimbro: processoTimbro, refSany: refSany, patio: patio, notaFiscal: notaFiscal, valor: valor,
+          endereco: endereco, m2Utilizado: m2Utilizado, transferenciaInicial: transferenciaInicial,
+          registro: registro, ativo: ativo, transportadora: transportadora, cliente: cliente,
+          dimensoesPL: dimensoesPL, areaIndividual: areaIndividual, areaTotal: areaTotal, peso: peso,
+          marca: marca, cnpjEmissor: cnpjEmissor, serieNF: serieNF, nomeEquipamento: nomeEquipamento
+        };
       });
 
       if (!Object.keys(map).length) {
@@ -14051,6 +14158,21 @@ function pvrAplicarCatalogoProcesso() {
       item.endereco = info.endereco || '';
       item.m2Utilizado = (info.m2Utilizado != null) ? info.m2Utilizado : null;
       item.transferenciaInicial = info.transferenciaInicial || '';
+      // Campos do Registro original — guardados por item (código), pro
+      // "Catálogo para Expedição" poder montar a linha completa depois, sem
+      // inventar nada que o arquivo importado não trouxe.
+      item.registro = info.registro || '';
+      item.ativo = info.ativo || '';
+      item.transportadora = info.transportadora || '';
+      item.cliente = info.cliente || '';
+      item.dimensoesPL = info.dimensoesPL || '';
+      item.areaIndividual = info.areaIndividual || '';
+      item.areaTotal = info.areaTotal || '';
+      item.peso = info.peso || '';
+      item.marca = info.marca || '';
+      item.cnpjEmissor = info.cnpjEmissor || '';
+      item.serieNF = info.serieNF || '';
+      item.nomeEquipamento = info.nomeEquipamento || '';
       matched++;
       if (item.tipo === 'MAQUINA') {
         serieProc = info.processoTimbro || serieProc; serieRef = info.refSany || serieRef; seriePatio = info.patio || seriePatio; serieNF = info.notaFiscal || serieNF;
@@ -14120,17 +14242,133 @@ function pvrLimparCatalogo() {
   pvrCatalogoArquivo = null;
   pvrSalvarCatalogoProcesso();
   pvrCatalogoSincronizarNuvem();
+  var CAMPOS_ITEM_CATALOGO = ['processoTimbro','refSany','notaFiscal','valor','endereco','m2Utilizado','transferenciaInicial','registro','ativo','transportadora','cliente','dimensoesPL','areaIndividual','areaTotal','peso','marca','cnpjEmissor','serieNF','nomeEquipamento'];
   Object.keys(pvrSeries).forEach(function(sid) {
     pvrSeries[sid].processoTimbro = ''; pvrSeries[sid].refSany = ''; pvrSeries[sid].notaFiscal = ''; pvrSeries[sid].valor = null;
     pvrSeries[sid].endereco = ''; pvrSeries[sid].m2Utilizado = null; pvrSeries[sid].transferenciaInicial = '';
-    pvrSeries[sid].items.forEach(function(it){ delete it.processoTimbro; delete it.refSany; delete it.notaFiscal; delete it.valor; delete it.endereco; delete it.m2Utilizado; delete it.transferenciaInicial; });
+    pvrSeries[sid].items.forEach(function(it){ CAMPOS_ITEM_CATALOGO.forEach(function(c){ delete it[c]; }); });
   });
-  pvrTodos.forEach(function(t){ delete t.processoTimbro; delete t.refSany; delete t.notaFiscal; delete t.valor; delete t.endereco; delete t.m2Utilizado; delete t.transferenciaInicial; });
+  pvrTodos.forEach(function(t){ CAMPOS_ITEM_CATALOGO.forEach(function(c){ delete t[c]; }); });
   pvrFiltroProcesso = ''; pvrFiltroRef = '';
   pvrRenderCatalogoInfo();
   pvrRenderKanban();
   pvrRenderStats();
   showToast('Catálogo removido.');
+}
+
+// ══════════════════════════════════════════════
+//  CATÁLOGO PARA EXPEDIÇÃO — escolhe séries já cadastradas no Recebimento
+//  e gera um Excel no mesmo padrão da planilha "Registro", uma linha por
+//  item (corpo + acessórios) por série escolhida. Pedido do Ruan: "eu entro
+//  no catalgo e escolho a série... voce vai me trazer o corpo principal
+//  mais os acessórios... e os processos também". Nunca inventa: o que não
+//  veio de nenhuma planilha importada (Recebimento/Catálogo) fica em branco.
+// ══════════════════════════════════════════════
+var catExpSelecionadas = {}; // sid -> true
+
+function catExpListaSeries(){
+  return Object.keys(pvrSeries).map(function(sid){
+    var s = pvrSeries[sid] || {};
+    return { sid: sid, modelo: s.modelo || '', patio: s.patio || '', volumes: (s.items || []).length };
+  }).sort(function(a, b){ return a.sid.localeCompare(b.sid); });
+}
+
+function catExpRenderLista(){
+  var wrap = document.getElementById('catexp-lista-wrap');
+  if (!wrap) return;
+  var busca = (document.getElementById('catexp-busca') || {}).value || '';
+  busca = busca.trim().toUpperCase();
+  var todas = catExpListaSeries();
+  var visiveis = busca ? todas.filter(function(s){ return s.sid.toUpperCase().indexOf(busca) >= 0; }) : todas;
+  if (!todas.length) { wrap.innerHTML = '<div style="color:#7a94b4;font-size:12px;padding:14px">Nenhuma série cadastrada ainda no Recebimento.</div>'; catExpAtualizarContador(); return; }
+  if (!visiveis.length) { wrap.innerHTML = '<div style="color:#7a94b4;font-size:12px;padding:14px">Nenhuma série encontrada pra "' + window.biEsc(busca) + '".</div>'; catExpAtualizarContador(); return; }
+  var esc = window.biEsc || function(v){ return String(v == null ? '' : v); };
+  var h = visiveis.map(function(s){
+    var marcado = !!catExpSelecionadas[s.sid];
+    return '<label style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12.5px" onmouseover="this.style.background=\'rgba(58,127,212,0.08)\'" onmouseout="this.style.background=\'\'">'
+      + '<input type="checkbox" ' + (marcado ? 'checked' : '') + ' onchange="catExpToggleSerie(\'' + s.sid.replace(/'/g, "\\'") + '\', this.checked)">'
+      + '<span style="font-weight:700;color:#5addf4">' + esc(s.sid) + '</span>'
+      + '<span style="color:#8aaad0">' + esc(s.modelo || '[sem modelo]') + '</span>'
+      + '<span style="color:#5a7a9a;margin-left:auto">' + esc(s.patio || '[sem pátio]') + ' · ' + s.volumes + ' volume(s)</span>'
+      + '</label>';
+  }).join('');
+  wrap.innerHTML = h;
+  catExpAtualizarContador();
+}
+
+function catExpToggleSerie(sid, marcado){
+  if (marcado) catExpSelecionadas[sid] = true; else delete catExpSelecionadas[sid];
+  catExpAtualizarContador();
+}
+
+function catExpSelecionarTodosVisiveis(){
+  var busca = (document.getElementById('catexp-busca') || {}).value || '';
+  busca = busca.trim().toUpperCase();
+  catExpListaSeries().forEach(function(s){
+    if (!busca || s.sid.toUpperCase().indexOf(busca) >= 0) catExpSelecionadas[s.sid] = true;
+  });
+  catExpRenderLista();
+}
+
+function catExpLimparSelecao(){
+  catExpSelecionadas = {};
+  catExpRenderLista();
+}
+
+function catExpAtualizarContador(){
+  var el = document.getElementById('catexp-contador');
+  if (el) el.textContent = Object.keys(catExpSelecionadas).length + ' série(s) selecionada(s)';
+}
+
+function catExpExportar(){
+  if (typeof XLSX === 'undefined') { showToast('⚠️ Biblioteca de Excel indisponível.', 6000); return; }
+  var sids = Object.keys(catExpSelecionadas);
+  if (!sids.length) { showToast('Selecione ao menos 1 série antes de exportar.'); return; }
+  sids.sort();
+  var linhas = [];
+  sids.forEach(function(sid){
+    var s = pvrSeries[sid];
+    if (!s) return; // série selecionada mas não encontrada mais no cadastro — não inventa linha
+    var items = s.items || [];
+    var qtdeVolTotal = items.length;
+    var qtdeCorpo = items.filter(function(it){ return it.tipo === 'MAQUINA'; }).length;
+    var qtdePartes = items.filter(function(it){ return it.tipo !== 'MAQUINA'; }).length;
+    items.forEach(function(item){
+      var nomeEquip = item.nomeEquipamento || (item.tipo === 'MAQUINA' ? 'CORPO DA MAQUINA' : 'ACESSORIOS');
+      linhas.push({
+        'Registro': item.registro || '',
+        'Código': item.codigo || '',
+        'Ativo': item.ativo || '',
+        'TRANSPORTADORA': item.transportadora || '',
+        'CLIENTE': item.cliente || '',
+        'PROCESSO IMPORTADORA': item.processoTimbro || '',
+        'PROCESSO FABRICANTE': item.refSany || '',
+        'SÉRIE': sid,
+        'MODELO': s.modelo || '',
+        'DESCRIÇÃO': item.desc || item.descCF || '',
+        'NÚMERO VOLUME': item.numVol != null ? item.numVol : '',
+        'DIMENSÕES PL': item.dimensoesPL || '',
+        'ÁREA INDIVIDUAL': item.areaIndividual || '',
+        'ÁREA TOTAL': item.areaTotal || '',
+        'PESO': item.peso || '',
+        'MARCA': item.marca || '',
+        'QTDE VOL TOTAL DA NF': qtdeVolTotal,
+        'QTDE CORPO PRINCIPAL': qtdeCorpo,
+        'QTDE VOL PARTES E PEÇAS DA NF': qtdePartes,
+        'CNPJ DO EMISSOR DA NF': item.cnpjEmissor || '',
+        'NRO NOTA FISCAL': item.notaFiscal || s.notaFiscal || '',
+        'SÉRIE NF': item.serieNF || '',
+        'VALOR DA NF': (item.valor != null ? item.valor : (s.valor != null ? s.valor : '')),
+        'PÁTIO': item.patio || s.patio || '',
+        'NOME DO EQUIPAMENTO': nomeEquip
+      });
+    });
+  });
+  if (!linhas.length) { showToast('Nenhum item encontrado nas séries selecionadas.'); return; }
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), 'Catalogo Expedicao');
+  XLSX.writeFile(wb, 'Catalogo_para_Expedicao_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  showToast('✅ Exportado! ' + sids.length + ' série(s), ' + linhas.length + ' linha(s).');
 }
 
 // Popula os <select> de filtro com os valores distintos encontrados nas séries atuais
@@ -14462,6 +14700,8 @@ function clienteAplicarLogos(){
 }
 
 var clienteArmAtual = 'GERAL';
+var clienteAba = 'painel';
+var clienteBusca = '';
 var clienteLancamentos = [];
 var clientePollTimer = null;
 
@@ -14485,6 +14725,7 @@ async function clienteTentarEntrar(){
 function clienteEntrarNoPainel(){
   var overlay = document.getElementById('cliente-painel-overlay'); if (overlay) overlay.style.display = 'none';
   var view = document.getElementById('cliente-painel-view'); if (view) view.style.display = 'block';
+  clienteSetAba('painel');
   clienteSetArm('GERAL');
   clienteAtualizarDados();
   if (clientePollTimer) clearInterval(clientePollTimer);
@@ -14509,11 +14750,27 @@ function clienteSetArm(arm){
   clienteRenderTabela();
 }
 
+function clienteSetAba(aba){
+  clienteAba = aba;
+  document.querySelectorAll('#cliente-aba-toggle .est-arm-btn').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-cliente-aba') === aba);
+  });
+  clienteRenderTabela();
+}
+
+function clienteFiltrarBusca(valor){
+  clienteBusca = (valor || '').trim().toUpperCase();
+  clienteRenderTabela();
+}
+
 function clienteRenderTabela(){
   var wrap = document.getElementById('cliente-tabela-wrap');
   if (!wrap) return;
-  var linhas = clienteLancamentos.filter(function(l){ return clienteArmAtual === 'GERAL' || l.patio === clienteArmAtual; });
-  if (!linhas.length){ wrap.innerHTML = '<div style="text-align:center;padding:24px;color:#5a7a9a;font-size:13px">Nenhuma programação lançada ainda.</div>'; return; }
+  var linhas = clienteLancamentos.filter(function(l){ return clienteArmAtual === 'GERAL' || window.biNormalizarPatio(l.patio) === window.biNormalizarPatio(clienteArmAtual); });
+  linhas = linhas.filter(function(l){ var expedido = typeof progEhExpedido === 'function' ? progEhExpedido(l.etapaProcesso) : false; return expedido === (clienteAba === 'expedidos'); });
+  if (clienteBusca) linhas = linhas.filter(function(l){ return String(l.serie || '').toUpperCase().indexOf(clienteBusca) >= 0; });
+  var abaLabel = clienteAba === 'expedidos' ? 'expedida' : 'no painel (a carregar)';
+  if (!linhas.length){ wrap.innerHTML = '<div style="text-align:center;padding:24px;color:#5a7a9a;font-size:13px">Nenhuma programação ' + abaLabel + (clienteBusca ? (' com a série "' + clienteBusca + '"') : '') + ' ainda.</div>'; return; }
   linhas = linhas.slice().sort(function(a,b){ return (window.pvrParseDataBR ? (window.pvrParseDataBR(b.data)||0) - (window.pvrParseDataBR(a.data)||0) : 0); });
   var esc = window.biEsc || function(s){ return String(s==null?'':s); };
   var h = '<div class="pvr-table-wrap"><table class="pvr-table"><thead><tr>'
